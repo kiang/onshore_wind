@@ -1,0 +1,229 @@
+var sidebar = new ol.control.Sidebar({ element: 'sidebar', position: 'right' });
+var jsonFiles, filesLength, fileKey = 0;
+
+var projection = ol.proj.get('EPSG:3857');
+var projectionExtent = projection.getExtent();
+var size = ol.extent.getWidth(projectionExtent) / 256;
+var resolutions = new Array(20);
+var matrixIds = new Array(20);
+for (var z = 0; z < 20; ++z) {
+    // generate resolutions and matrixIds arrays for this WMTS
+    resolutions[z] = size / Math.pow(2, z);
+    matrixIds[z] = z;
+}
+
+var sidebarTitle = document.getElementById('sidebarTitle');
+var content = document.getElementById('sidebarContent');
+
+var appView = new ol.View({
+  center: ol.proj.fromLonLat([120.283267,23.686385]),
+  zoom: 12
+});
+
+var previousFeature = false;
+var currentFeature = false;
+
+var vectorPoints = new ol.layer.Vector({
+  source: new ol.source.Vector({
+    format: new ol.format.GeoJSON({
+      featureProjection: appView.getProjection()
+    }),
+    url: 'data/points.json'
+  }),
+  style: pointStyleFunction
+});
+
+var findTerms = [], featurePool = [];
+var changeTriggered = false;
+
+vectorPoints.getSource().on('change', function() {
+  if(false === changeTriggered) {
+    changeTriggered = true;
+    var features = vectorPoints.getSource().getFeatures();
+    for(k in features) {
+      featurePool.push(features[k]);
+      var p = features[k].getProperties();
+      findTerms.push({
+        value: p['項次'],
+        label: p['業者名稱'] + ' ' + p['風機編號']
+      });
+    }
+  
+    $('#findPoint').autocomplete({
+      source: findTerms,
+      select: function(event, ui) {
+        var targetHash = '#' + ui.item.value;
+        if (window.location.hash !== targetHash) {
+          window.location.hash = targetHash;
+        }
+      }
+    });
+  }
+});
+
+var baseLayer = new ol.layer.Tile({
+    source: new ol.source.WMTS({
+        matrixSet: 'EPSG:3857',
+        format: 'image/png',
+        url: 'https://wmts.nlsc.gov.tw/wmts',
+        layer: 'EMAP',
+        tileGrid: new ol.tilegrid.WMTS({
+            origin: ol.extent.getTopLeft(projectionExtent),
+            resolutions: resolutions,
+            matrixIds: matrixIds
+        }),
+        style: 'default',
+        wrapX: true,
+        attributions: '<a href="http://maps.nlsc.gov.tw/" target="_blank">國土測繪圖資服務雲</a>'
+    }),
+    opacity: 0.8
+});
+
+var map = new ol.Map({
+  layers: [baseLayer, vectorPoints],
+  target: 'map',
+  view: appView
+});
+
+map.addControl(sidebar);
+var pointClicked = false;
+map.on('singleclick', function(evt) {
+  content.innerHTML = '';
+  pointClicked = false;
+  map.forEachFeatureAtPixel(evt.pixel, function (feature, layer) {
+    if(false === pointClicked) {
+      var p = feature.getProperties();
+      var targetHash = '#' + p['項次'];
+      if (window.location.hash !== targetHash) {
+        window.location.hash = targetHash;
+      }
+      pointClicked = true;
+    }
+  });
+});
+
+function pointStyleFunction(f) {
+  var p = f.getProperties(), color, stroke, radius = 30;
+  if(f === currentFeature) {
+    stroke = new ol.style.Stroke({
+      color: '#000',
+      width: 5
+    });
+  } else {
+    stroke = new ol.style.Stroke({
+      color: '#fff',
+      width: 2
+    });
+  }
+  var t = new ol.style.Text({
+    font: 'bold 14px "Open Sans", "Arial Unicode MS", "sans-serif"',
+    fill: new ol.style.Fill({
+      color: 'blue'
+    }),
+    text: p['風機編號']
+  })
+  color = '#c7c774';
+  return new ol.style.Style({
+    image: new ol.style.RegularShape({
+      radius: radius,
+      points: 3,
+      fill: new ol.style.Fill({
+        color: color
+      }),
+      stroke: stroke
+    }),
+    text: t
+  })
+}
+
+function showPoint(pointId) {
+  $('#findPoint').val(pointId);
+  
+  var features = vectorPoints.getSource().getFeatures();
+  var pointFound = false;
+  for(k in features) {
+    var p = features[k].getProperties();
+    if(p['項次'] == pointId) {
+      currentFeature = features[k];
+      features[k].setStyle(pointStyleFunction(features[k]));
+      if(false !== previousFeature) {
+        previousFeature.setStyle(pointStyleFunction(previousFeature));
+      }
+      previousFeature = currentFeature;
+      appView.setCenter(features[k].getGeometry().getCoordinates());
+      appView.setZoom(15);
+      var lonLat = ol.proj.toLonLat(p.geometry.getCoordinates());
+      var message = '<table class="table table-dark">';
+      message += '<tbody>';
+      message += '<tr><th scope="row" style="width: 100px;">名稱</th><td>';
+      message += p['業者名稱'] + ' ' + p['風機編號'];
+      message += '</td></tr>';
+      message += '<tr><th scope="row">鄉鎮區</th><td>' + p['鄉鎮區'] + '</td></tr>';
+      message += '<tr><th scope="row">地號</th><td>' + p['地段'] + p['地號'] + '</td></tr>';
+      message += '<tr><th scope="row">籌設許可</th><td>' + p['籌設許可'] + '</td></tr>';
+      message += '<tr><th scope="row">工作許可</th><td>' + p['工作許可'] + '</td></tr>';
+      message += '<tr><th scope="row">環評</th><td>' + p['環評'] + '</td></tr>';
+      message += '<tr><td colspan="2">';
+      message += '<hr /><div class="btn-group-vertical" role="group" style="width: 100%;">';
+      message += '<a href="https://www.google.com/maps/dir/?api=1&destination=' + lonLat[1] + ',' + lonLat[0] + '&travelmode=driving" target="_blank" class="btn btn-info btn-lg btn-block">Google 導航</a>';
+      message += '<a href="https://wego.here.com/directions/drive/mylocation/' + lonLat[1] + ',' + lonLat[0] + '" target="_blank" class="btn btn-info btn-lg btn-block">Here WeGo 導航</a>';
+      message += '<a href="https://bing.com/maps/default.aspx?rtp=~pos.' + lonLat[1] + '_' + lonLat[0] + '" target="_blank" class="btn btn-info btn-lg btn-block">Bing 導航</a>';
+      message += '</div></td></tr>';
+      message += '</tbody></table>';
+      sidebarTitle.innerHTML = p['業者名稱'] + ' ' + p['風機編號'];
+      content.innerHTML = message;
+    }
+  }
+  sidebar.open('home');
+}
+
+var geolocation = new ol.Geolocation({
+  projection: appView.getProjection()
+});
+
+geolocation.setTracking(true);
+
+geolocation.on('error', function(error) {
+  console.log(error.message);
+});
+
+var positionFeature = new ol.Feature();
+
+positionFeature.setStyle(new ol.style.Style({
+  image: new ol.style.Circle({
+    radius: 6,
+    fill: new ol.style.Fill({
+      color: '#3399CC'
+    }),
+    stroke: new ol.style.Stroke({
+      color: '#fff',
+      width: 2
+    })
+  })
+}));
+
+geolocation.on('change:position', function() {
+  var coordinates = geolocation.getPosition();
+  positionFeature.setGeometry(coordinates ? new ol.geom.Point(coordinates) : null);
+});
+
+new ol.layer.Vector({
+  map: map,
+  source: new ol.source.Vector({
+    features: [positionFeature]
+  })
+});
+
+$('#btn-geolocation').click(function () {
+  var coordinates = geolocation.getPosition();
+  if(coordinates) {
+    appView.setCenter(coordinates);
+  } else {
+    alert('目前使用的設備無法提供地理資訊');
+  }
+  return false;
+});
+
+setTimeout(function() {
+  routie(':pointId', showPoint);
+}, 300);
