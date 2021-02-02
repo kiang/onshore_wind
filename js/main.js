@@ -122,7 +122,43 @@ function pointStyleFunction(f) {
     }),
     text: p['風機編號']
   })
-  color = '#c7c774';
+  switch(currentFilter) {
+    case 'filter1':
+      switch(p['籌設許可']) {
+        case '已取得':
+          color = '#84fc5d';
+          break;
+        default:
+          color = '#fc5d7f';
+          break;
+      }
+      break;
+    case 'filter2':
+      switch(p['工作許可']) {
+        case '已取得':
+          color = '#84fc5d';
+          break;
+        case '申請中':
+          color = '#eefc5d';
+          break;
+        default:
+          color = '#fc5d7f';
+          break;
+      }
+      break;
+    case 'filter3':
+      switch(p['環評']) {
+        case '通過':
+          color = '#84fc5d';
+          break;
+        default:
+          color = '#fc5d7f';
+          break;
+      }
+      break;
+    default:
+      color = '#c7c774';
+  }
   return new ol.style.Style({
     image: new ol.style.RegularShape({
       radius: radius,
@@ -227,3 +263,22 @@ $('#btn-geolocation').click(function () {
 setTimeout(function() {
   routie(':pointId', showPoint);
 }, 300);
+
+var currentFilter = '';
+$('#btn-filter1').click(function(e) {
+  e.preventDefault();
+  currentFilter = 'filter1';
+  vectorPoints.getSource().refresh();
+});
+
+$('#btn-filter2').click(function(e) {
+  e.preventDefault();
+  currentFilter = 'filter2';
+  vectorPoints.getSource().refresh();
+});
+
+$('#btn-filter3').click(function(e) {
+  e.preventDefault();
+  currentFilter = 'filter3';
+  vectorPoints.getSource().refresh();
+});
